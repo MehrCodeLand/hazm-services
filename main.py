@@ -301,6 +301,49 @@ async def extract_entities(request: EntityRequest):
         raise HTTPException(status_code=500, detail=f"Entity extraction error: {str(e)}")
 
 
+@app.post("/extract/title")
+async def extract_title_from_text(request: TextRequest):
+    try:
+        normalized = normalizer.normalize(request.text)
+        words = word_tokenize(normalized)
+        
+        lemmas = [lemmatizer.lemmatize(w) for w in words if len(w) > 2]
+        
+        from collections import Counter
+        lemma_freq = Counter(lemmas)
+        
+        stop_words = {
+            'است', 'شد', 'شده', 'می', 'را', 'به', 'از', 'در', 'که', 'این', 
+            'آن', 'با', 'برای', 'یک', 'هم', 'خود', 'تا', 'کرد', 'بر', 'هر',
+            'نیز', 'اما', 'یا', 'چه', 'و', 'ای', 'دارد', 'داشت', 'کند',
+            'شود', 'گفت', 'کرده', 'دو', 'سه', 'چند', 'همه', 'باید', 'بود',
+            'داد', 'گذاری', 'گیرد', 'بین', 'پس', 'توسط', 'حتی'
+        }
+        
+        filtered_lemmas = [
+            (lemma, count) for lemma, count in lemma_freq.most_common(15) 
+            if lemma not in stop_words and len(lemma) > 1
+        ]
+        
+        top_lemmas = [l[0] for l in filtered_lemmas[:3]]
+        
+        if not top_lemmas:
+            title = "بدون عنوان"
+        elif len(top_lemmas) == 1:
+            title = top_lemmas[0]
+        else:
+            title = ' - '.join(top_lemmas)
+        
+        return {
+            "text": request.text,
+            "generated_title": title,
+            "top_lemmas": top_lemmas,
+            "lemma_frequencies": dict(filtered_lemmas[:5])
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Title extraction error: {str(e)}")
+
+
 @app.post("/split/sentences/advanced")
 async def split_sentences_advanced(request: SentenceSplitRequest):
     try:
@@ -537,13 +580,6 @@ async def extract_title_from_text(request: TextRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Title extraction error: {str(e)}")
     
-
-
-
-
-
-
-
 
 
 
