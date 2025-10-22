@@ -509,6 +509,44 @@ async def preprocess_document(request: TextRequest):
         raise HTTPException(status_code=500, detail=f"Document preprocessing error: {str(e)}")
 
 
+@app.post("/extract/title")
+async def extract_title_from_text(request: TextRequest):
+    try:
+        normalized = normalizer.normalize(request.text)
+        words = word_tokenize(normalized)
+        
+        lemmas = [lemmatizer.lemmatize(w) for w in words if len(w) > 2]
+        
+        from collections import Counter
+        lemma_freq = Counter(lemmas)
+        
+        stop_words = {'است', 'شد', 'می', 'را', 'به', 'از', 'در', 'که', 'این', 'آن', 'با', 'برای'}
+        
+        filtered_lemmas = [l for l in lemma_freq.most_common(10) if l[0] not in stop_words]
+        
+        top_lemmas = [l[0] for l in filtered_lemmas[:3]]
+        
+        title = ' - '.join(top_lemmas) if top_lemmas else "بدون عنوان"
+        
+        return {
+            "text": request.text,
+            "generated_title": title,
+            "top_lemmas": top_lemmas,
+            "lemma_frequencies": dict(filtered_lemmas[:5])
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Title extraction error: {str(e)}")
+    
+
+
+
+
+
+
+
+
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
