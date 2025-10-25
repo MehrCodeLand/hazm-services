@@ -252,20 +252,52 @@ async def syntactic_chunk(request: ChunkRequest):
         if chunker is None:
             raise HTTPException(status_code=503, detail="Chunker not available")
         
+        if tagger is None:
+            raise HTTPException(status_code=503, detail="POS Tagger not available")
+
+        # Step 1: Normalize text
         normalized = normalizer.normalize(request.text)
-        tokens = word_tokenize(normalized)
-        tree = chunker.parse(tokens)  # <-- use the instance, not the class
+
+        # Step 2: Split into sentences
+        sentences = sent_tokenize(normalized)
         
+        # Step 3: Process each sentence
+        all_tagged = []
+        all_trees = []
+        
+        for sent in sentences:
+            # Tokenize sentence
+            tokens = word_tokenize(sent)
+            
+            # POS tag the tokens
+            tagged = tagger.tag(tokens)  # [('من', 'PRON'), ('به', 'ADP'), ...]
+            all_tagged.append(tagged)
+            
+            # Parse the tagged sentence - chunker.parse expects list of tagged sentences
+            tree = chunker.parse(tagged)  # Pass tagged directly, not [tagged]
+            all_trees.append(str(tree))
+        
+        # Step 4: Return structured result
         return {
             "text": request.text,
             "normalized": normalized,
-            "tokens": tokens,
-            "tree": str(tree)
+            "sentences": [
+                {
+                    "sentence": sent,
+                    "tokens": [word for word, pos in tagged],
+                    "tagged": tagged,
+                    "tree": tree
+                }
+                for sent, tagged, tree in zip(sentences, all_tagged, all_trees)
+            ],
+            "sentence_count": len(sentences)
         }
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chunkinggg error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Chunking error: {str(e)}")
+
 
 @app.post("/extract/entities")
 async def extract_entities(request: EntityRequest):
@@ -386,91 +418,183 @@ async def split_sentences_advanced(request: SentenceSplitRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Advanced sentence splitting error: {str(e)}")
 
-
 @app.post("/chunk/semantic")
 async def semantic_chunk_text(request: SemanticChunkRequest):
     try:
+        # Step 1: Normalize text
         normalized = normalizer.normalize(request.text)
         
-        paragraphs = re.split(r'[ \t]*[\n\r]+[ \t]*', normalized)
+        if not normalized.strip():
+            return {
+                "original_text": request.text,
+                "normalized_text": normalized,
+                "chunks": [],
+                "total_chunks": 0,
+                "min_chunk_size": request.min_chunk_size,
+                "max_chunk_size": request.max_chunk_size,
+                "warning": "Empty text after normalization"
+            }
         
-        tokenized_paragraphs = []
+        # Step 2: Split into paragraphs (improved regex)
+        paragraphs = re.split(r'\n\s*\n+', normalized.strip())
+        
+        # Step 3: Process paragraphs into structured units
+        paragraph_units = []
         for p in paragraphs:
-            if not p.strip():
+            p = p.strip()
+            if not p:
                 continue
             
             sentences = sent_tokenize(p)
-            word_count = len(word_tokenize(p))
+            if not sentences:
+                continue
+                
+            word_count = sum(len(word_tokenize(s)) for s in sentences)
             
-            tokenized_paragraphs.append({
+            paragraph_units.append({
                 "text": p,
                 "sentences": sentences,
+                "sentence_count": len(sentences),
                 "word_count": word_count
             })
         
-        chunks = []
-        current_chunk_text = []
-        current_word_count = 0
+        if not paragraph_units:
+            return {
+                "original_text": request.text,
+                "normalized_text": normalized,
+                "chunks": [],
+                "total_chunks": 0,
+                "min_chunk_size": request.min_chunk_size,
+                "max_chunk_size": request.max_chunk_size,
+                "warning": "No valid paragraphs found"
+            }
         
-        for para in tokenized_paragraphs:
-            if para["word_count"] > request.max_chunk_size:
-                if current_chunk_text:
-                    chunk_text = "\n".join(current_chunk_text)
-                    chunks.append({
-                        "text": chunk_text,
-                        "word_count": current_word_count,
-                        "paragraph_count": len(current_chunk_text),
-                        "index": len(chunks)
-                    })
-                    current_chunk_text = []
-                    current_word_count = 0
+        # Step 4: Build chunks intelligently
+        chunks = []
+        current_chunk_sentences = []
+        current_word_count = 0
+        current_para_count = 0
+        
+        def finalize_chunk():
+            """Helper to finalize current chunk"""
+            nonlocal current_chunk_sentences, current_word_count, current_para_count
+            
+            if current_chunk_sentences:
+                chunk_text = " ".join(current_chunk_sentences)
+                chunks.append({
+                    "text": chunk_text,
+                    "word_count": current_word_count,
+                    "sentence_count": len(current_chunk_sentences),
+                    "paragraph_count": current_para_count,
+                    "index": len(chunks),
+                    "char_count": len(chunk_text)
+                })
+                current_chunk_sentences = []
+                current_word_count = 0
+                current_para_count = 0
+        
+        for para_unit in paragraph_units:
+            # Case 1: Single paragraph exceeds max_chunk_size - split by sentences
+            if para_unit["word_count"] > request.max_chunk_size:
+                # Finalize any pending chunk first
+                finalize_chunk()
                 
-                for sentence in para["sentences"]:
+                for sentence in para_unit["sentences"]:
                     sent_words = len(word_tokenize(sentence))
                     
-                    if current_word_count + sent_words <= request.max_chunk_size:
-                        current_chunk_text.append(sentence)
-                        current_word_count += sent_words
-                    else:
-                        if current_chunk_text:
-                            chunk_text = " ".join(current_chunk_text)
-                            chunks.append({
-                                "text": chunk_text,
-                                "word_count": current_word_count,
-                                "paragraph_count": 1,
-                                "index": len(chunks)
-                            })
-                        current_chunk_text = [sentence]
+                    # Case 1a: Single sentence exceeds max - force split
+                    if sent_words > request.max_chunk_size:
+                        if current_chunk_sentences:
+                            finalize_chunk()
+                        
+                        # Split long sentence into words
+                        words = word_tokenize(sentence)
+                        temp_words = []
+                        temp_count = 0
+                        
+                        for word in words:
+                            temp_words.append(word)
+                            temp_count += 1
+                            
+                            if temp_count >= request.max_chunk_size:
+                                chunks.append({
+                                    "text": " ".join(temp_words),
+                                    "word_count": temp_count,
+                                    "sentence_count": 1,
+                                    "paragraph_count": 1,
+                                    "index": len(chunks),
+                                    "char_count": len(" ".join(temp_words)),
+                                    "is_partial_sentence": True
+                                })
+                                temp_words = []
+                                temp_count = 0
+                        
+                        if temp_words:
+                            current_chunk_sentences = [" ".join(temp_words)]
+                            current_word_count = temp_count
+                            current_para_count = 1
+                    
+                    # Case 1b: Adding sentence would exceed max
+                    elif current_word_count + sent_words > request.max_chunk_size:
+                        finalize_chunk()
+                        current_chunk_sentences = [sentence]
                         current_word_count = sent_words
+                        current_para_count = 1
+                    
+                    # Case 1c: Can add sentence to current chunk
+                    else:
+                        current_chunk_sentences.append(sentence)
+                        current_word_count += sent_words
+                        if not current_para_count:
+                            current_para_count = 1
             
-            elif current_word_count + para["word_count"] <= request.max_chunk_size:
-                current_chunk_text.append(para["text"])
-                current_word_count += para["word_count"]
-            else:
-                if current_chunk_text:
-                    chunk_text = "\n".join(current_chunk_text)
-                    chunks.append({
-                        "text": chunk_text,
-                        "word_count": current_word_count,
-                        "paragraph_count": len(current_chunk_text),
-                        "index": len(chunks)
-                    })
+            # Case 2: Adding paragraph would exceed max - finalize and start new
+            elif current_word_count + para_unit["word_count"] > request.max_chunk_size:
+                # Only finalize if we meet min_chunk_size or no choice
+                if current_word_count >= request.min_chunk_size or not current_chunk_sentences:
+                    finalize_chunk()
+                else:
+                    # Try to add at least one sentence from new paragraph
+                    finalize_chunk()
                 
-                current_chunk_text = [para["text"]]
-                current_word_count = para["word_count"]
+                current_chunk_sentences = para_unit["sentences"]
+                current_word_count = para_unit["word_count"]
+                current_para_count = 1
+            
+            # Case 3: Can add entire paragraph to current chunk
+            else:
+                current_chunk_sentences.extend(para_unit["sentences"])
+                current_word_count += para_unit["word_count"]
+                current_para_count += 1
         
-        if current_chunk_text:
-            chunk_text = "\n".join(current_chunk_text)
-            chunks.append({
-                "text": chunk_text,
-                "word_count": current_word_count,
-                "paragraph_count": len(current_chunk_text),
-                "index": len(chunks)
-            })
+        # Finalize last chunk
+        finalize_chunk()
         
+        # Step 5: Add context windows
         for i, chunk in enumerate(chunks):
-            chunk["prev_context"] = chunks[i-1]["text"][-200:] if i > 0 else ""
-            chunk["next_context"] = chunks[i+1]["text"][:200] if i < len(chunks) - 1 else ""
+            # Previous context
+            if i > 0:
+                prev_text = chunks[i-1]["text"]
+                chunk["prev_context"] = prev_text[-200:] if len(prev_text) > 200 else prev_text
+            else:
+                chunk["prev_context"] = ""
+            
+            # Next context
+            if i < len(chunks) - 1:
+                next_text = chunks[i+1]["text"]
+                chunk["next_context"] = next_text[:200] if len(next_text) > 200 else next_text
+            else:
+                chunk["next_context"] = ""
+        
+        # Step 6: Calculate statistics
+        stats = {
+            "total_words": sum(c["word_count"] for c in chunks),
+            "avg_chunk_size": sum(c["word_count"] for c in chunks) / len(chunks) if chunks else 0,
+            "min_actual_size": min(c["word_count"] for c in chunks) if chunks else 0,
+            "max_actual_size": max(c["word_count"] for c in chunks) if chunks else 0,
+            "total_sentences": sum(c["sentence_count"] for c in chunks),
+            "total_paragraphs": sum(c["paragraph_count"] for c in chunks)
+        }
         
         return {
             "original_text": request.text,
@@ -478,9 +602,12 @@ async def semantic_chunk_text(request: SemanticChunkRequest):
             "chunks": chunks,
             "total_chunks": len(chunks),
             "min_chunk_size": request.min_chunk_size,
-            "max_chunk_size": request.max_chunk_size
+            "max_chunk_size": request.max_chunk_size,
+            "statistics": stats
         }
+        
     except Exception as e:
+        logger.error(f"Semantic chunking error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Semantic chunking error: {str(e)}")
 
 
