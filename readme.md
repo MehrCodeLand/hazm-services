@@ -171,7 +171,6 @@ HAZM_SERVICE_URL = "http://localhost:8001"  # Use localhost
 {
   "original": "این یک متن فارسي است با حروف عربي مثل ك و ي",
   "normalized": "این یک متن فارسی است با حروف عربی مثل ک و ی",
-  "char_changes": 4
 }
 ```
 

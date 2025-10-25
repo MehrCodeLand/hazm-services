@@ -18,6 +18,9 @@ app = FastAPI(title="Hazm NLP Service", version="1.0.0")
 normalizer = Normalizer()
 lemmatizer = Lemmatizer()
 stemmer = Stemmer()
+tagger = POSTagger(model='pos_tagger.model')      
+chunker = Chunker(model='chunker.model') 
+
 
 try:
     tagger = POSTagger(model='pos_tagger.model')
@@ -116,7 +119,6 @@ async def normalize_text(request: NormalizationRequest):
         return {
             "original": request.text,
             "normalized": normalized,
-            "char_changes": len(request.text) - len(normalized)
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Normalization error: {str(e)}")
@@ -251,19 +253,19 @@ async def syntactic_chunk(request: ChunkRequest):
             raise HTTPException(status_code=503, detail="Chunker not available")
         
         normalized = normalizer.normalize(request.text)
-        tree = chunker.parse(word_tokenize(normalized))
+        tokens = word_tokenize(normalized)
+        tree = chunker.parse(tokens)  # <-- use the instance, not the class
         
         return {
             "text": request.text,
             "normalized": normalized,
+            "tokens": tokens,
             "tree": str(tree)
         }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chunking error: {str(e)}")
-
-
+        raise HTTPException(status_code=500, detail=f"Chunkinggg error: {str(e)}")
 
 @app.post("/extract/entities")
 async def extract_entities(request: EntityRequest):
