@@ -6,8 +6,12 @@ from hazm import Normalizer, word_tokenize, sent_tokenize, Lemmatizer, Stemmer, 
 from hazm import Chunker, DependencyParser
 import re
 
+
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 app = FastAPI(title="Hazm NLP Service", version="1.0.0")
 
@@ -260,12 +264,14 @@ async def syntactic_chunk(request: ChunkRequest):
         raise HTTPException(status_code=500, detail=f"Chunking error: {str(e)}")
 
 
+
 @app.post("/extract/entities")
 async def extract_entities(request: EntityRequest):
     try:
         normalized = normalizer.normalize(request.text)
-        tokens = word_tokenize(normalized)
-        
+        text_list = request.text.split()
+        # tokens = word_tokenize(request.text)
+
         entities = {
             "numbers": [],
             "urls": [],
@@ -277,7 +283,8 @@ async def extract_entities(request: EntityRequest):
         url_pattern = r'https?://(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)'
         email_pattern = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
         
-        for token in tokens:
+
+        for token in text_list:
             if re.match(number_pattern, token):
                 entities["numbers"].append(token)
             elif re.match(url_pattern, token):
@@ -295,7 +302,8 @@ async def extract_entities(request: EntityRequest):
         return {
             "text": request.text,
             "entities": entities,
-            "total_entities": sum(len(v) for v in entities.values())
+            "total_entities": sum(len(v) for v in entities.values()),
+            # "words": tokens,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Entity extraction error: {str(e)}")
@@ -338,7 +346,7 @@ async def extract_title_from_text(request: TextRequest):
             "text": request.text,
             "generated_title": title,
             "top_lemmas": top_lemmas,
-            "lemma_frequencies": dict(filtered_lemmas[:5])
+            "lemma_frequencies": dict(filtered_lemmas[:5]),
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Title extraction error: {str(e)}")
