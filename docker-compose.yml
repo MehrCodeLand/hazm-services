@@ -10,6 +10,8 @@ services:
       - PYTHONUNBUFFERED=1
     volumes:
       - "./main.py:/app/main.py"
+      - "./pos_tagger.model:/app/pos_tagger.model"  # Add this
+      - "./chunker.model:/app/chunker.model"        # Add this
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
@@ -17,6 +19,3 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-
-
-

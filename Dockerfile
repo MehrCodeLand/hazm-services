@@ -14,18 +14,16 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 RUN pip install --upgrade pip
-
 RUN pip install wheel setuptools
-
 RUN pip install numpy
-
 RUN pip install scikit-learn
-
 RUN pip install libwapiti || echo "libwapiti installation failed, continuing..."
-
 RUN pip install --no-cache-dir hazm
-
 RUN pip install --no-cache-dir fastapi uvicorn pydantic
+
+# Copy model files BEFORE copying main.py
+COPY pos_tagger.model .
+COPY chunker.model .
 
 COPY main.py .
 
