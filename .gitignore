@@ -1,7 +1,3 @@
-./chunker.model
-./pos_tagger.model
-
-chunker.model
+*.model
 pos_tagger.model
-
-
+chunker.model
