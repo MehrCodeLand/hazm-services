@@ -658,9 +658,134 @@ Text → Normalize → Split Paragraphs
 
 **Use Case:** Document statistics, quality assessment, exploratory analysis
 
+
+
+
+### 12. **POS Tagging** ⭐ NEW
+
+**Endpoint:** `POST /pos/tag`
+
+**Purpose:** Part-of-Speech tagging for Persian text (identify nouns, verbs, adjectives, etc.)
+
+**Input:**
+```json
+{
+  "text": "کتاب‌های جدید را در کتابخانه گذاشتند."
+}
+```
+
+**Output:**
+```json
+{
+  "text": "کتاب‌های جدید را در کتابخانه گذاشتند.",
+  "normalized": "کتاب‌های جدید را در کتابخانه گذاشتند.",
+  "pos_tags": [
+    {"word": "کتاب‌های", "tag": "N"},
+    {"word": "جدید", "tag": "ADJ"},
+    {"word": "را", "tag": "POSTP"},
+    {"word": "در", "tag": "P"},
+    {"word": "کتابخانه", "tag": "N"},
+    {"word": "گذاشتند", "tag": "V"},
+    {"word": ".", "tag": "PUNC"}
+  ]
+}
+```
+
+**Tag Meanings:**
+- `N`: Noun (اسم)
+- `V`: Verb (فعل)
+- `ADJ`: Adjective (صفت)
+- `ADV`: Adverb (قید)
+- `P`: Preposition (حرف اضافه)
+- `POSTP`: Postposition (حرف ربط)
+- `PUNC`: Punctuation (نقطه‌گذاری)
+- `DET`: Determiner (تعیین‌کننده)
+- `PRON`: Pronoun (ضمیر)
+- `NUM`: Number (عدد)
+- `CONJ`: Conjunction (حرف ربط)
+
+**What It Does:**
+- Identifies grammatical role of each word
+- Uses Wapiti-based POS tagger (if available)
+- Handles Persian-specific grammatical structures
+
+**Use Case:** 
+- Advanced text analysis
+- Query understanding (identify key nouns/verbs)
+- Grammar-based filtering
+- Extracting specific word types
+
+**Note:** ⚠️ This endpoint requires `libwapiti` to be installed. If unavailable, the service will return an error. Check `/health` endpoint to see if POS tagger is available.
+
 ---
 
-### 13. Document Preprocessing
+### 13. **Syntactic Chunking** ⭐ NEW
+
+**Endpoint:** `POST /chunk/syntactic`
+
+**Purpose:** Identify noun phrases, verb phrases, and other syntactic chunks in Persian text
+
+**Input:**
+```json
+{
+  "text": "دانشجویان دانشگاه تهران در کتابخانه مرکزی مشغول مطالعه هستند."
+}
+```
+
+**Output:**
+```json
+{
+  "text": "دانشجویان دانشگاه تهران در کتابخانه مرکزی مشغول مطالعه هستند.",
+  "normalized": "دانشجویان دانشگاه تهران در کتابخانه مرکزی مشغول مطالعه هستند.",
+  "chunks": [
+    {
+      "type": "NP",
+      "text": "دانشجویان دانشگاه تهران",
+      "start": 0,
+      "end": 3
+    },
+    {
+      "type": "PP",
+      "text": "در کتابخانه مرکزی",
+      "start": 3,
+      "end": 6
+    },
+    {
+      "type": "VP",
+      "text": "مشغول مطالعه هستند",
+      "start": 6,
+      "end": 9
+    }
+  ],
+  "chunk_count": 3
+}
+```
+
+**Chunk Types:**
+- `NP`: Noun Phrase (گروه اسمی) - e.g., "کتاب‌های جدید"
+- `VP`: Verb Phrase (گروه فعلی) - e.g., "مطالعه می‌کنند"
+- `PP`: Prepositional Phrase (گروه حرف اضافه‌ای) - e.g., "در کتابخانه"
+- `ADJP`: Adjective Phrase (گروه صفتی) - e.g., "بسیار بزرگ"
+- `ADVP`: Adverb Phrase (گروه قیدی) - e.g., "خیلی سریع"
+
+**What It Does:**
+- Groups words into meaningful syntactic units
+- Identifies relationships between words
+- Extracts complex noun phrases (multi-word entities)
+
+**Use Case:**
+- Extract key concepts from text
+- Identify named entities (compound nouns)
+- Question answering (match question structure)
+- Advanced search (phrase-based matching)
+
+**Note:** ⚠️ Requires POS tagging to work. Check `/health` endpoint for availability.
+
+---
+
+---
+
+### 15. Document Preprocessing
 
 **Endpoint:** `POST /preprocess/document`
 
